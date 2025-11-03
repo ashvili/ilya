@@ -1,0 +1,139 @@
+--- grid.py
++++ grid.py
+@@ -11,10 +11,10 @@
+     voxel_size: int
+ 
+     def __init__(self, voxel_size: int):
+-        self.min_bound = np.array([0, 0, 0])
+-        self.max_bound = np.array([0, 0, 0])
++        self.min_bound = np.array([0, 0, 0], dtype=float)
++        self.max_bound = np.array([0, 0, 0], dtype=float)
+ 
+-        self.voxel_size = voxel_size
++        self.voxel_size = int(voxel_size)
+ 
+     def ray_grid_intersection(self, ray: Ray):
+ 
+@@ -68,78 +68,83 @@
+ 
+         return max(t_min, 0), max(t_max, 0)
+ 
+-    def amanatides_woo_algorithm(self, ray: Ray, t_min, t_max):
++        def amanatides_woo_algorithm(self, ray: Ray, t_min, t_max):
++        """
++        Amanatides & Woo voxel traversal with zero-based indices and no off-by-one.
++        Start cell = floor((p - min_bound)/voxel_size) for each axis.
++        """
+         ray_start = ray.origin + ray.direction * t_min
+         ray_end = ray.origin + ray.direction * t_max
+ 
+-        current_x_index = max(1, math.ceil((ray_start[0] - self.min_bound[0]) / self.voxel_size))
+-        end_x_index = max(1, math.ceil((ray_end[0] - self.min_bound[0]) / self.voxel_size))
++        # zero-based voxel indices
++        ix = math.floor((ray_start[0] - self.min_bound[0]) / self.voxel_size)
++        iy = math.floor((ray_start[1] - self.min_bound[1]) / self.voxel_size)
++        iz = math.floor((ray_start[2] - self.min_bound[2]) / self.voxel_size)
+ 
++        ex = math.floor((ray_end[0] - self.min_bound[0]) / self.voxel_size)
++        ey = math.floor((ray_end[1] - self.min_bound[1]) / self.voxel_size)
++        ez = math.floor((ray_end[2] - self.min_bound[2]) / self.voxel_size)
++
++        # step and tMax / tDelta per axis
+         if ray.direction[0] > 0:
+             step_x = 1
++            next_boundary_x = self.min_bound[0] + (ix + 1) * self.voxel_size
++            t_max_x = t_min + (next_boundary_x - ray_start[0]) / ray.direction[0]
+             t_dx = self.voxel_size / ray.direction[0]
+-            t_max_x = t_min + (self.min_bound[0] + current_x_index * self.voxel_size - ray_start[0]) / ray.direction[0]
+         elif ray.direction[0] < 0:
+             step_x = -1
+-            t_dx = self.voxel_size / -ray.direction[0]
+-            previous_x_index = current_x_index - 1
+-            t_max_x = t_min + (self.min_bound[0] + previous_x_index * self.voxel_size - ray_start[0]) / ray.direction[0]
++            next_boundary_x = self.min_bound[0] + ix * self.voxel_size
++            t_max_x = t_min + (next_boundary_x - ray_start[0]) / ray.direction[0]
++            t_dx = -self.voxel_size / ray.direction[0]  # positive
+         else:
+             step_x = 0
+-            t_dx = t_max
+-            t_max_x = t_max
+-
+-        current_y_index = max(1, math.ceil((ray_start[1] - self.min_bound[1]) / self.voxel_size))
+-        end_y_index = max(1, math.ceil((ray_end[1] - self.min_bound[1]) / self.voxel_size))
++            t_max_x = float('inf')
++            t_dx = float('inf')
+ 
+         if ray.direction[1] > 0:
+             step_y = 1
++            next_boundary_y = self.min_bound[1] + (iy + 1) * self.voxel_size
++            t_max_y = t_min + (next_boundary_y - ray_start[1]) / ray.direction[1]
+             t_dy = self.voxel_size / ray.direction[1]
+-            t_max_y = t_min + (self.min_bound[1] + current_y_index * self.voxel_size - ray_start[1]) / ray.direction[1]
+         elif ray.direction[1] < 0:
+             step_y = -1
+-            t_dy = self.voxel_size / -ray.direction[1]
+-            previous_y_index = current_y_index - 1
+-            t_max_y = t_min + (self.min_bound[1] + previous_y_index * self.voxel_size - ray_start[1]) / ray.direction[1]
++            next_boundary_y = self.min_bound[1] + iy * self.voxel_size
++            t_max_y = t_min + (next_boundary_y - ray_start[1]) / ray.direction[1]
++            t_dy = -self.voxel_size / ray.direction[1]
+         else:
+             step_y = 0
+-            t_dy = t_max
+-            t_max_y = t_max
+-
+-        current_z_index = max(1, math.ceil((ray_start[2] - self.min_bound[2]) / self.voxel_size))
+-        end_z_index = max(1, math.ceil((ray_end[2] - self.min_bound[2]) / self.voxel_size))
++            t_max_y = float('inf')
++            t_dy = float('inf')
+ 
+         if ray.direction[2] > 0:
+             step_z = 1
++            next_boundary_z = self.min_bound[2] + (iz + 1) * self.voxel_size
++            t_max_z = t_min + (next_boundary_z - ray_start[2]) / ray.direction[2]
+             t_dz = self.voxel_size / ray.direction[2]
+-            t_max_z = t_min + (self.min_bound[2] + current_z_index * self.voxel_size - ray_start[2]) / ray.direction[2]
+         elif ray.direction[2] < 0:
+             step_z = -1
+-            t_dz = self.voxel_size / -ray.direction[2]
+-            previous_z_index = current_z_index - 1
+-            t_max_z = t_min + (self.min_bound[2] + previous_z_index * self.voxel_size - ray_start[2]) / ray.direction[2]
++            next_boundary_z = self.min_bound[2] + iz * self.voxel_size
++            t_max_z = t_min + (next_boundary_z - ray_start[2]) / ray.direction[2]
++            t_dz = -self.voxel_size / ray.direction[2]
+         else:
+             step_z = 0
+-            t_dz = t_max
+-            t_max_z = t_max
++            t_max_z = float('inf')
++            t_dz = float('inf')
+ 
+-        blocks = [(current_x_index, current_y_index, current_z_index)]
++        blocks = [(ix, iy, iz)]
+ 
+-        while (
+-                (not current_x_index == end_x_index)
+-                or (not current_y_index == end_y_index)
+-                or (not current_z_index == end_z_index)
+-        ):
+-            if t_max_x < t_max_y and t_max_x < t_max_z:
+-                current_x_index += step_x
++        # traverse until we reach the end voxel
++        while not (ix == ex and iy == ey and iz == ez):
++            if t_max_x <= t_max_y and t_max_x <= t_max_z:
++                ix += step_x
+                 t_max_x += t_dx
+-            elif t_max_y < t_max_z:
+-                current_y_index += step_y
++            elif t_max_y <= t_max_z:
++                iy += step_y
+                 t_max_y += t_dy
+             else:
+-                current_z_index += step_z
++                iz += step_z
+                 t_max_z += t_dz
+-            blocks.append((current_x_index, current_y_index, current_z_index))
++            blocks.append((ix, iy, iz))
+ 
+         return blocks
+ 

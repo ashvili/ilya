@@ -1,0 +1,47 @@
+{
+  "delimiter": ";",
+  "columns": [
+    {
+      "name": "x",
+      "type": "float",
+      "required": true,
+      "min": 5625000,
+      "max": 5627000
+    },
+    {
+      "name": "y",
+      "type": "float",
+      "required": true,
+      "min": 2315000,
+      "max": 2317500
+    },
+    {
+      "name": "z",
+      "type": "float",
+      "required": true,
+      "min": 0,
+      "max": 10000
+    },
+    {
+      "name": "content_id",
+      "type": "int",
+      "required": true
+    },
+    {
+      "name": "_x",
+      "type": "float",
+      "required": false
+    },
+    {
+      "name": "_y",
+      "type": "float",
+      "required": false
+    },
+    {
+      "name": "_z",
+      "type": "float",
+      "required": false
+    }
+  ],
+  "unique": []
+}

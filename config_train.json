@@ -1,0 +1,16 @@
+{
+  "csv_path": "./temp/explored_blocks.csv",
+  "delimiter": ";",
+  "features": [
+    "x",
+    "y",
+    "z"
+  ],
+  "target": "content_id",
+  "seed": 42,
+  "epochs": 10,
+  "batch_size": 128,
+  "learning_rate": 0.001,
+  "val_fraction": 0.1,
+  "class_weight": "balanced"
+}

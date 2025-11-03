@@ -1,0 +1,91 @@
+--- site.py
++++ site.py
+@@ -54,11 +54,30 @@
+     def __init__(self, voxel_size):
+         super().__init__(voxel_size)
+         self.wells = []
+-        self.max_bound = np.array([1000000, 1000000, 1000000])
+-        self.min_bound = np.array([-1000000, -1000000, -1000000])
++        self.max_bound = np.array([0, 0, 0], dtype=float)
++        self.min_bound = np.array([0, 0, 0], dtype=float)
+ 
+     def add_well(self, well: Well):
+         self.wells.append(well)
++
++    def fit_bounds(self, margin_voxels: int = 1):
++        """Compute AABB of all segment endpoints and snap to voxel grid with margin."""
++        pts = []
++        for w in self.wells:
++            for s in w.segments:
++                p1 = w.head + s.origin
++                p2 = w.head + s.end
++                pts.append(p1)
++                pts.append(p2)
++        if not pts:
++            return
++        v = float(self.voxel_size)
++        pts = np.array(pts, dtype=float)
++        mn = np.floor(pts.min(axis=0) / v) * v
++        mx = np.ceil(pts.max(axis=0) / v) * v
++        pad = margin_voxels * v
++        self.min_bound = mn - pad
++        self.max_bound = mx + pad
+         #
+         # if not self.max_bound[0] or well.head[0] > self.max_bound[0]:
+         #     self.max_bound[0] = well.head[0] + 100
+@@ -79,25 +98,38 @@
+         with np.printoptions(precision=3, suppress=True):
+             return f'Site {self.min_bound} -> {self.max_bound}'
+ 
+-    def process(self):
+-        blocks = []
++        def process(self):
++        # auto-fit bounds if unset
++        if not np.any(self.max_bound - self.min_bound):
++            self.fit_bounds(margin_voxels=1)
++
++        rows = []
++        seen = set()
+         for well in self.wells:
+             for segment in well.segments:
+                 ray = Ray(segment.origin + well.head, segment.direction)
+                 voxel_indices = self.find_voxels(ray, 0, 1)
+-                block_origin = self.min_bound + (np.array(voxel_indices) * self.voxel_size)
+-                blocks.extend(
+-                    [
+-                        {
+-                            'x': block[0],
+-                            'y': block[1],
+-                            'z': block[2],
+-                            'content_id': segment.content,
+-                            '_x': self.voxel_size,
+-                            '_y': self.voxel_size,
+-                            '_z': self.voxel_size,
+-                        } for block in block_origin
+-                    ]
+-                )
++                if not voxel_indices:
++                    continue
++                for ix, iy, iz in voxel_indices:
++                    key = (int(ix), int(iy), int(iz), int(segment.content) if str(segment.content).isdigit() else segment.content)
++                    if key in seen:
++                        continue
++                    seen.add(key)
++                    x = self.min_bound[0] + ix * self.voxel_size
++                    y = self.min_bound[1] + iy * self.voxel_size
++                    z = self.min_bound[2] + iz * self.voxel_size
++                    rows.append({
++                        'x': x, 'y': y, 'z': z,
++                        'content_id': int(segment.content) if str(segment.content).isdigit() else segment.content,
++                        '_x': self.voxel_size, '_y': self.voxel_size, '_z': self.voxel_size
++                    })
+ 
+-        return pd.DataFrame(blocks).drop_duplicates()
++        df = pd.DataFrame(rows)
++        if not df.empty:
++            # stable dtypes for ML
++            for c in ['_x','_y','_z']:
++                df[c] = df[c].astype('int16')
++            if np.issubdtype(df['x'].dtype, np.number):
++                df[['x','y','z']] = df[['x','y','z']].astype('float64')
++        return df

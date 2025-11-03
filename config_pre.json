@@ -1,0 +1,33 @@
+{
+  "input_xlsx_sheet_map": {
+    "wellhead": {
+      "columns": {
+        "name": "СКВ",
+        "x": "X",
+        "y": "Y",
+        "z": "Z"
+      }
+    },
+    "inclinometry": {
+      "columns": {
+        "name": "СКВ",
+        "azimuth": "АЗИМУТ",
+        "zenith": "УГОЛ",
+        "depth": "ГЛУБИНА СЪЕМКИ"
+      }
+    },
+    "lithology": {
+      "columns": {
+        "name": "СКВ",
+        "from": "ОТ",
+        "to": "ДО",
+        "interval": "ИНТЕРВАЛ",
+        "code": "ЛИТ.КОД"
+      }
+    }
+  },
+  "voxel_size": 0.1,
+  "output_csv": "./temp/explored_blocks.csv",
+  "delimiter": ";",
+  "encoding": "utf-8"
+}
