@@ -7,7 +7,7 @@ import numpy as np
 from exploration.site import Site, Well, WellSegment
 
 
-def main(voxel_size: int, inputfile_path: str, outputfile_path: str):
+def main(voxel_size: int, inputfile_path: str, outputfile_path: str, advanced: bool = False):
     site = Site(voxel_size)
 
     wellheads_data = pd.read_excel(inputfile_path, 0, usecols=range(4))
@@ -64,7 +64,12 @@ def main(voxel_size: int, inputfile_path: str, outputfile_path: str):
 
         site.add_well(well)
 
-    df = site.process_with_norm(normalize='minmax')
+    # Выбор метода обработки: упрощенный по умолчанию, расширенный при флаге --advanced
+    if advanced:
+        df = site.process_advanced(normalize='minmax')
+    else:
+        df = site.process_simple()
+    
     df.to_csv(outputfile_path, index=False, encoding='utf-8')
 
 
@@ -90,8 +95,14 @@ if __name__ == '__main__':
         type=int,
         help='block size (integer)'
     )
+    parser.add_argument(
+        '--advanced',
+        action='store_true',
+        default=False,
+        help='use advanced processing mode with normalization and additional features (default: simple mode)'
+    )
 
     args = parser.parse_args()
 
-    main(args.block_size, args.input_file_path, args.output_file_path)
+    main(args.block_size, args.input_file_path, args.output_file_path, args.advanced)
     print(f'Done, saved to {os.path.abspath(args.output_file_path)}')

@@ -248,7 +248,7 @@ class Site(Grid):
 
         return df
 
-    def process_with_norm(
+    def process_advanced(
         self,
         normalize: str | None = None,
         context_radius: int = 2,
@@ -364,6 +364,65 @@ class Site(Grid):
                     df["content_id"].to_numpy(dtype=int, copy=False),
                     radius=max(1, int(context_radius)),
                 ).astype("float64")
+
+        return df
+
+
+    def process_simple(self):
+        """
+        Трассировка всех сегментов через воксельную сетку (Amanatides–Woo).
+        Возвращает DataFrame с блоками: x, y, z, content_id, well_id, _x, _y, _z
+        """
+        # если границы не заданы, вычислим по данным (min/max прижаты к сетке, с отступом)
+        if not np.any(self.max_bound - self.min_bound):
+            self.fit_bounds(margin_voxels=1)
+
+        rows = []
+        seen = set()
+
+        for well in self.wells:
+            for segment in well.segments:
+                ray = Ray(segment.origin + well.head, segment.direction)
+                voxel_indices = self.find_voxels(ray, 0.0, 1.0)
+                if not voxel_indices:
+                    continue
+
+                for ix, iy, iz in voxel_indices:
+                    key = (int(ix), int(iy), int(iz),
+                           int(segment.content) if str(segment.content).isdigit() else segment.content)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+
+                    x = self.min_bound[0] + ix * self.voxel_size
+                    y = self.min_bound[1] + iy * self.voxel_size
+                    z = self.min_bound[2] + iz * self.voxel_size
+
+                    rows.append({
+                        "x": x, "y": y, "z": z,
+                        "content_id": int(segment.content) if str(segment.content).isdigit() else segment.content,
+                        "well_id": getattr(well, 'name', None),
+                        "_x": self.voxel_size, "_y": self.voxel_size, "_z": self.voxel_size,
+                    })
+
+        df = pd.DataFrame(rows)
+
+        if df.empty:
+            return df
+
+        # стабильные типы
+        df = df.astype({
+            "x": "float64", "y": "float64", "z": "float64",
+            "_x": "int16", "_y": "int16", "_z": "int16",
+        })
+        
+        # well_id как строка (id скважины)
+        if 'well_id' in df.columns:
+            df['well_id'] = df['well_id'].astype('string')
+
+        # content_id как int32
+        if pd.api.types.is_integer_dtype(df['content_id']) or pd.api.types.is_float_dtype(df['content_id']):
+            df['content_id'] = df['content_id'].astype('int32')
 
         return df
 
