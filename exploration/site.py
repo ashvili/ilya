@@ -127,6 +127,8 @@ class Site(Grid):
         for w in getattr(self, "wells", []):
             for s in w.segments:
                 p1 = w.head + s.origin
+                p2 = w.head + s.end
+                seg_pairs.append((p1, p2))
         p2 = w.head + s.end
         seg_pairs.append((p1, p2))
         
@@ -151,13 +153,28 @@ class Site(Grid):
             proj = a[None, :] + t[:, None] * ab[None, :]
             d = np.linalg.norm(pts - proj, axis=1)
         out = np.minimum(out, d)
+
+        # обычно сегментов меньше, чем точек — перебираем сегменты
+        for a, b in seg_pairs:
+            a = np.asarray(a, dtype=float)
+            b = np.asarray(b, dtype=float)
+            ab = b - a
+            denom = float(np.dot(ab, ab))
+            if denom <= 0.0:
+                d = np.linalg.norm(pts - a[None, :], axis=1)
+            else:
+                ap = pts - a[None, :]
+                t = np.clip(np.einsum("ij,j->i", ap, ab) / denom, 0.0, 1.0)
+                proj = a[None, :] + t[:, None] * ab[None, :]
+                d = np.linalg.norm(pts - proj, axis=1)
+            out = np.minimum(out, d)        
         
         return out
         
-    @ staticmethod
+
+    @staticmethod
     def _context_mean(indices_xyz: np.ndarray, content_ids: np.ndarray, radius: int = 1) -> np.ndarray:
         """Средний content_id в окрестности (2r+1)^3 вокруг каждого вокселя."""
-
         mapping = {(int(ix), int(iy), int(iz)): int(cid)
                    for (ix, iy, iz), cid in zip(indices_xyz, content_ids)}
         means = np.empty((indices_xyz.shape[0],), dtype=float)
@@ -165,7 +182,6 @@ class Site(Grid):
         for i, (ix, iy, iz) in enumerate(indices_xyz):
             s = 0
             c = 0
-            
             for dx in rng:
                 for dy in rng:
                     for dz in rng:
@@ -174,7 +190,6 @@ class Site(Grid):
                             s += val
                             c += 1
             means[i] = (s / c) if c else np.nan
-        
         return means
     
     def process(self):
@@ -276,6 +291,7 @@ class Site(Grid):
                     rows.append({
                         "x": x, "y": y, "z": z,
                         "content_id": int(segment.content) if str(segment.content).isdigit() else segment.content,
+                        "well_id": getattr(well, 'name', None),
                         "_x": self.voxel_size, "_y": self.voxel_size, "_z": self.voxel_size,
                     })
 
@@ -289,6 +305,10 @@ class Site(Grid):
             "x": "float64", "y": "float64", "z": "float64",
             "_x": "int16", "_y": "int16", "_z": "int16",
         })
+        
+        # well_id как строка (id скважины)
+        if 'well_id' in df.columns:
+            df['well_id'] = df['well_id'].astype('string')
 
         # нормализация (добавляет x_n, y_n, z_n)
         if normalize is not None:
@@ -325,22 +345,24 @@ class Site(Grid):
 
             if not df.empty:
                 df["_ix"] = ((df["x"] - self.min_bound[0]) / float(self.voxel_size)).astype("int32")
-            df["_iy"] = ((df["y"] - self.min_bound[1]) / float(self.voxel_size)).astype("int32")
-            df["_iz"] = ((df["z"] - self.min_bound[2]) / float(self.voxel_size)).astype("int32")
+                df["_iy"] = ((df["y"] - self.min_bound[1]) / float(self.voxel_size)).astype("int32")
+                df["_iz"] = ((df["z"] - self.min_bound[2]) / float(self.voxel_size)).astype("int32")
 
             # Расстояние до ближайшей скважины (устья и сегменты траектории)
-
             if not df.empty:
                 pts = df[["x", "y", "z"]].to_numpy(dtype=float, copy=False)
-            df["dist_to_nearest_well"] = self._dist_to_nearest_well_np(pts).astype("float64")
+                df["dist_to_nearest_well"] = self._dist_to_nearest_well_np(pts).astype("float64")
 
             # Простой контекст: средний content_id в кубе радиуса r вокруг вокселя
 
+            # убедимся, что content_id точно числовой (для контекстной агрегации)
+            if "content_id" in df.columns and not pd.api.types.is_integer_dtype(df["content_id"]):
+                df["content_id"] = pd.to_numeric(df["content_id"], errors="coerce").astype("Int32").fillna(0).astype("int32")
             if not df.empty and "content_id" in df.columns and pd.api.types.is_integer_dtype(df["content_id"]):
                 df["context_mean_id"] = self._context_mean(
                     df[["_ix", "_iy", "_iz"]].to_numpy(dtype=int, copy=False),
                     df["content_id"].to_numpy(dtype=int, copy=False),
-                    radius = max(1, int(context_radius)),
+                    radius=max(1, int(context_radius)),
                 ).astype("float64")
 
         return df
