@@ -98,7 +98,146 @@ class Site(Grid):
         with np.printoptions(precision=3, suppress=True):
             return f'Site {self.min_bound} -> {self.max_bound}'
 
-    def process_with_norm(self, normalize: str | None = None):
+     # ===== Вспомогательные методы =====
+    @ staticmethod
+    def _point_segment_dist(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
+        """Кратчайшее расстояние от точки p до отрезка ab в 3D."""
+
+        ab = b - a
+        ap = p - a
+        denom = float(np.dot(ab, ab))
+        
+        if denom <= 0.0:
+            return float(np.linalg.norm(ap))
+        t = np.clip(np.dot(ap, ab) / denom, 0.0, 1.0)
+        proj = a + t * ab
+        
+        return float(np.linalg.norm(p - proj))
+        
+        
+    def _dist_to_nearest_well_np(self, pts: np.ndarray) -> np.ndarray:
+        """Векторизованная оценка min расстояния до устьев и сегментов всех скважин."""
+
+        # устья
+        heads = [w.head for w in getattr(self, "wells", [])]
+        heads_arr = np.array(heads, dtype=float) if heads else np.empty((0, 3), dtype=float)
+        # пары концов сегментов (p1, p2)
+        seg_pairs = []
+        
+        for w in getattr(self, "wells", []):
+            for s in w.segments:
+                p1 = w.head + s.origin
+        p2 = w.head + s.end
+        seg_pairs.append((p1, p2))
+        
+        out = np.full((pts.shape[0],), np.inf, dtype=float)
+        
+        if heads_arr.size:
+            dh = np.linalg.norm(pts[:, None, :] - heads_arr[None, :, :], axis=2).min(axis=1)
+        out = np.minimum(out, dh)
+        # обычно сегментов меньше, чем точек — перебираем сегменты
+        
+        for a, b in seg_pairs:
+            a = np.asarray(a, dtype=float)
+        b = np.asarray(b, dtype=float)
+        ab = b - a
+        denom = float(np.dot(ab, ab))
+        
+        if denom <= 0.0:
+            d = np.linalg.norm(pts - a[None, :], axis=1)
+        else:
+            ap = pts - a[None, :]
+            t = np.clip(np.einsum("ij,j->i", ap, ab) / denom, 0.0, 1.0)
+            proj = a[None, :] + t[:, None] * ab[None, :]
+            d = np.linalg.norm(pts - proj, axis=1)
+        out = np.minimum(out, d)
+        
+        return out
+        
+    @ staticmethod
+    def _context_mean(indices_xyz: np.ndarray, content_ids: np.ndarray, radius: int = 1) -> np.ndarray:
+        """Средний content_id в окрестности (2r+1)^3 вокруг каждого вокселя."""
+
+        mapping = {(int(ix), int(iy), int(iz)): int(cid)
+                   for (ix, iy, iz), cid in zip(indices_xyz, content_ids)}
+        means = np.empty((indices_xyz.shape[0],), dtype=float)
+        rng = range(-radius, radius + 1)
+        for i, (ix, iy, iz) in enumerate(indices_xyz):
+            s = 0
+            c = 0
+            
+            for dx in rng:
+                for dy in rng:
+                    for dz in rng:
+                        val = mapping.get((int(ix + dx), int(iy + dy), int(iz + dz)))
+                        if val is not None:
+                            s += val
+                            c += 1
+            means[i] = (s / c) if c else np.nan
+        
+        return means
+    
+    def process(self):
+        # auto-fit bounds if unset
+        if not np.any(self.max_bound - self.min_bound):
+            self.fit_bounds(margin_voxels=1)
+            
+        rows = []
+        seen = set()
+        
+        for well in self.wells:
+            for segment in well.segments:
+                ray = Ray(segment.origin + well.head, segment.direction)
+                voxel_indices = self.find_voxels(ray, 0, 1)
+                if not voxel_indices:
+                    continue
+                for ix, iy, iz in voxel_indices:
+                    key = (int(ix), int(iy), int(iz), int(segment.content) if str(segment.content).isdigit() else segment.content)
+                    # объединяем для теста группы 8..12 в 8 (Other)
+                    _raw = int(segment.content) if str(segment.content).isdigit() else segment.content
+                    cid = 8 if isinstance(_raw, int) and _raw >= 8 else _raw
+
+                    key = (int(ix), int(iy), int(iz), cid)
+
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    x = self.min_bound[0] + ix * self.voxel_size
+                    y = self.min_bound[1] + iy * self.voxel_size
+                    z = self.min_bound[2] + iz * self.voxel_size
+                    rows.append({
+                        'x': x, 'y': y, 'z': z,
+                        # 'content_id': int(segment.content) if str(segment.content).isdigit() else segment.content,
+                        'content_id': cid,
+                        'well_id': getattr(well, 'name', None),
+                        '_x': self.voxel_size, '_y': self.voxel_size, '_z': self.voxel_size
+                    })
+
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            # for c in ['_x','_y','_z']:
+            #     df[c] = df[c].astype('int16')
+            # if np.issubdtype(df['x'].dtype, np.number):
+            #     df[['x','y','z']] = df[['x','y','z']].astype('float64')
+            # стабильные типы
+            df[['_x', '_y', '_z']] = df[['_x', '_y', '_z']].astype('int16')
+            df[['x', 'y', 'z']] = df[['x', 'y', 'z']].astype('float64')
+            # content_id теперь 1..8
+
+            if pd.api.types.is_integer_dtype(df['content_id']) or pd.api.types.is_float_dtype(df['content_id']):
+                df['content_id'] = df['content_id'].astype('int32')
+            # well_id как строка (id скважины)
+
+            if 'well_id' in df.columns:
+                df['well_id'] = df['well_id'].astype('string')
+
+        return df
+
+    def process_with_norm(
+        self,
+        normalize: str | None = None,
+        context_radius: int = 2,
+        ):
         """
         Трассировка всех сегментов через воксельную сетку (Amanatides–Woo).
         Возвращает DataFrame с блоками:
@@ -177,59 +316,32 @@ class Site(Grid):
             # приводим тип к float64 (на случай смешанных типов)
             df[["x_n", "y_n", "z_n"]] = df[["x_n", "y_n", "z_n"]].astype("float64")
 
-        return df
+            # Доп. признаки для ML
 
-    def process(self):
-        # если границы не заданы, вычислим по данным
-        if not np.any(self.max_bound - self.min_bound):
-            self.fit_bounds(margin_voxels=1)
+            if not df.empty:      # Z направлена вверх; depth хотим положительную вниз
+                df["depth"] = (-df["z"]).astype("float64")
 
-        rows = []
-        seen = set()
-        for well in self.wells:
-            for segment in well.segments:
-                ray = Ray(segment.origin + well.head, segment.direction)
-                voxel_indices = self.find_voxels(ray, 0, 1)
-                if not voxel_indices:
-                    continue
-                for ix, iy, iz in voxel_indices:
-                    key = (int(ix), int(iy), int(iz), int(segment.content) if str(segment.content).isdigit() else segment.content)
-                    # объединяем для теста группы 8..12 в 8 (Other)
-                    _raw = int(segment.content) if str(segment.content).isdigit() else segment.content
-                    cid = 8 if isinstance(_raw, int) and _raw >= 8 else _raw
+            # Индексы вокселей (нужны для контекста/расстояний)
 
-                    key = (int(ix), int(iy), int(iz), cid)
+            if not df.empty:
+                df["_ix"] = ((df["x"] - self.min_bound[0]) / float(self.voxel_size)).astype("int32")
+            df["_iy"] = ((df["y"] - self.min_bound[1]) / float(self.voxel_size)).astype("int32")
+            df["_iz"] = ((df["z"] - self.min_bound[2]) / float(self.voxel_size)).astype("int32")
 
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    x = self.min_bound[0] + ix * self.voxel_size
-                    y = self.min_bound[1] + iy * self.voxel_size
-                    z = self.min_bound[2] + iz * self.voxel_size
-                    rows.append({
-                        'x': x, 'y': y, 'z': z,
-                        # 'content_id': int(segment.content) if str(segment.content).isdigit() else segment.content,
-                        'content_id': cid,
-                        'well_id': getattr(well, 'name', None),
-                        '_x': self.voxel_size, '_y': self.voxel_size, '_z': self.voxel_size
-                    })
+            # Расстояние до ближайшей скважины (устья и сегменты траектории)
 
-        df = pd.DataFrame(rows)
-        if not df.empty:
-            # for c in ['_x','_y','_z']:
-            #     df[c] = df[c].astype('int16')
-            # if np.issubdtype(df['x'].dtype, np.number):
-            #     df[['x','y','z']] = df[['x','y','z']].astype('float64')
-            # стабильные типы
-            df[['_x', '_y', '_z']] = df[['_x', '_y', '_z']].astype('int16')
-            df[['x', 'y', 'z']] = df[['x', 'y', 'z']].astype('float64')
-            # content_id теперь 1..8
+            if not df.empty:
+                pts = df[["x", "y", "z"]].to_numpy(dtype=float, copy=False)
+            df["dist_to_nearest_well"] = self._dist_to_nearest_well_np(pts).astype("float64")
 
-            if pd.api.types.is_integer_dtype(df['content_id']) or pd.api.types.is_float_dtype(df['content_id']):
-                df['content_id'] = df['content_id'].astype('int32')
-            # well_id как строка (id скважины)
+            # Простой контекст: средний content_id в кубе радиуса r вокруг вокселя
 
-            if 'well_id' in df.columns:
-                df['well_id'] = df['well_id'].astype('string')
+            if not df.empty and "content_id" in df.columns and pd.api.types.is_integer_dtype(df["content_id"]):
+                df["context_mean_id"] = self._context_mean(
+                    df[["_ix", "_iy", "_iz"]].to_numpy(dtype=int, copy=False),
+                    df["content_id"].to_numpy(dtype=int, copy=False),
+                    radius = max(1, int(context_radius)),
+                ).astype("float64")
 
         return df
+

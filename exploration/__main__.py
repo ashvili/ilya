@@ -64,7 +64,7 @@ def main(voxel_size: int, inputfile_path: str, outputfile_path: str):
 
         site.add_well(well)
 
-    df = site.process()
+    df = site.process_with_norm(normalize='minmax')
     df.to_csv(outputfile_path, index=False, encoding='utf-8')
 
 
