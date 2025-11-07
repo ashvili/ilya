@@ -12,52 +12,53 @@ from dotenv import load_dotenv
 
 from .utils import set_global_seed
 
+from .cv import run_k_minus_1, run_k_minus_x
 
-    # ─────────────────────────────────────────────────────────────
-    # Диагностика разбиения и нормализации (очень полезно перед обучением)
-    # ─────────────────────────────────────────────────────────────
-    def _summarize_split(train_ds, test_ds):
-        # 1) Список скважин в train/test
-        import numpy as np
-        train_wells = list(pd.unique(pd.Series(train_ds.well_id)))
-        test_wells  = list(pd.unique(pd.Series(test_ds.well_id)))
-        train_wells_sorted = sorted(set(train_wells), key=lambda x: str(x))
-        test_wells_sorted  = sorted(set(test_wells),  key=lambda x: str(x))
-        union_wells = sorted(set(train_wells_sorted) | set(test_wells_sorted), key=lambda x: str(x))
+# ─────────────────────────────────────────────────────────────
+# Диагностика разбиения и нормализации (очень полезно перед обучением)
+# ─────────────────────────────────────────────────────────────
+def _summarize_split(train_ds, test_ds):
+    # 1) Список скважин в train/test
+    import numpy as np
+    train_wells = list(pd.unique(pd.Series(train_ds.well_id)))
+    test_wells  = list(pd.unique(pd.Series(test_ds.well_id)))
+    train_wells_sorted = sorted(set(train_wells), key=lambda x: str(x))
+    test_wells_sorted  = sorted(set(test_wells),  key=lambda x: str(x))
+    union_wells = sorted(set(train_wells_sorted) | set(test_wells_sorted), key=lambda x: str(x))
 
-        print("\n[split] ─────────────────────────────────────")
-        print(f"[split] total wells: {len(union_wells)}")
-        print(f"[split] train wells (unique): {len(train_wells_sorted)}")
-        print(f"[split] test  wells (unique): {len(test_wells_sorted)}")
-        print(f"[split] train wells: {train_wells_sorted}")
-        print(f"[split] test  wells: {test_wells_sorted}")
+    print("\n[split] ─────────────────────────────────────")
+    print(f"[split] total wells: {len(union_wells)}")
+    print(f"[split] train wells (unique): {len(train_wells_sorted)}")
+    print(f"[split] test  wells (unique): {len(test_wells_sorted)}")
+    print(f"[split] train wells: {train_wells_sorted}")
+    print(f"[split] test  wells: {test_wells_sorted}")
 
-        # 2) Границы нормализации (MIN/MAX) — ОБЯЗАТЕЛЬНО из TRAIN
-        print("\n[norm] MIN/MAX (computed on TRAIN, applied to both):")
-        try:
-            borders = getattr(train_ds, "borders", None) or {}
-            for axis in ("X_x", "X_y", "X_z"):
-                b = borders.get(axis, {})
-                vmin = b.get("MIN", None)
-                vmax = b.get("MAX", None)
-                if vmin is None or vmax is None:
-                    print(f"[norm] {axis}: <no borders>")
-                else:
-                    # печатаем с 6 знаками — достаточно для контроля
-                    print(f"[norm] {axis}: min={float(vmin):.6f}, max={float(vmax):.6f}")
-        except Exception as e:
-            print(f"[norm] failed to print borders: {e}")
+    # 2) Границы нормализации (MIN/MAX) — ОБЯЗАТЕЛЬНО из TRAIN
+    print("\n[norm] MIN/MAX (computed on TRAIN, applied to both):")
+    try:
+        borders = getattr(train_ds, "borders", None) or {}
+        for axis in ("X_x", "X_y", "X_z"):
+            b = borders.get(axis, {})
+            vmin = b.get("MIN", None)
+            vmax = b.get("MAX", None)
+            if vmin is None or vmax is None:
+                print(f"[norm] {axis}: <no borders>")
+            else:
+                # печатаем с 6 знаками — достаточно для контроля
+                print(f"[norm] {axis}: min={float(vmin):.6f}, max={float(vmax):.6f}")
+    except Exception as e:
+        print(f"[norm] failed to print borders: {e}")
 
-        # 3) Список классов (порядок критичен — он задаёт индексацию)
-        print("\n[classes] mapping (idx → label) used for training/prediction:")
-        try:
-            contents = getattr(train_ds, "contents", None) or {}
-            class_names = [contents[i] for i in range(len(contents))]
-            print(f"[classes] count={len(class_names)}")
-            print(f"[classes] {class_names}")
-        except Exception as e:
-            print(f"[classes] failed to print class mapping: {e}")
-        print("────────────────────────────────────────────\n")
+    # 3) Список классов (порядок критичен — он задаёт индексацию)
+    print("\n[classes] mapping (idx → label) used for training/prediction:")
+    try:
+        contents = getattr(train_ds, "contents", None) or {}
+        class_names = [contents[i] for i in range(len(contents))]
+        print(f"[classes] count={len(class_names)}")
+        print(f"[classes] {class_names}")
+    except Exception as e:
+        print(f"[classes] failed to print class mapping: {e}")
+    print("────────────────────────────────────────────\n")
 
 @measure_elapsed_time
 def main(datasets_filepath,
@@ -75,6 +76,42 @@ def main(datasets_filepath,
     # ─────────────────────────────────────────────────────────────
     load_dotenv()              # загрузим .env из текущей директории
     set_global_seed(42)
+
+    # 1️⃣ — Ветка для кросс-валидации
+    if args.cv == "k-1":
+        df_folds, df_per_well = run_k_minus_1(
+            args.csv_path,
+            seed=42,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            device=None,
+        )
+        df_folds.to_csv("cv_k-1_folds.csv", index=False)
+        df_per_well.to_csv("cv_k-1_per_well.csv", index=False)
+        print("Saved cv_k-1_folds.csv and cv_k-1_per_well.csv")
+        return  # ← выходим, чтобы не выполнять обычное обучение
+
+    if args.cv == "k-x":
+        df_folds, df_per_well = run_k_minus_x(
+            args.csv_path,
+            x_count=args.fold_x,
+            x_percent=args.fold_x_percent,
+            repeats=args.cv_repeats,
+            seed=42,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            device=None,
+        )
+        df_folds.to_csv("cv_k-x_folds.csv", index=False)
+        df_per_well.to_csv("cv_k-x_per_well.csv", index=False)
+        print("Saved cv_k-x_folds.csv and cv_k-x_per_well.csv")
+        return  # ← то же — завершаем
+
+    # 2️⃣ — Обычный режим (без кросс-валидации)
+
+
     print(f'{nproc=}')
 
     train_dataset, test_dataset = get_datasets(datasets_filepath)
@@ -194,6 +231,28 @@ if __name__ == '__main__':
         type=str,
         help='path to save output files',
     )
+
+    parser.add_argument(
+        "--cv", choices=["none", "k-1", "k-x"], 
+        default="none"
+        )
+    parser.add_argument(
+        "--fold-x", 
+        type=int, 
+        default=None, 
+        help="x для k–x/x (количество скважин в тесте)"
+        )
+    parser.add_argument(
+        "--fold-x-percent", 
+        type=float, 
+        default=None, 
+        help="p%% для k–x/x (доля скважин)"
+        )
+    parser.add_argument(
+        "--cv-repeats", 
+        type=int, 
+        default=5
+        )
 
     args = parser.parse_args()
 
