@@ -8,6 +8,8 @@ from ml.model import NeuralNetwork, train, predict
 from ml.utils import measure_elapsed_time
 from ml.dataset import get_datasets
 
+from dotenv import load_dotenv
+
 
 @measure_elapsed_time
 def main(datasets_filepath,
@@ -92,6 +94,7 @@ def main(datasets_filepath,
 
 
 if __name__ == '__main__':
+    load_dotenv()              # загрузим .env из текущей директории
 
     parser = argparse.ArgumentParser(
         description='Train network and predict blocks',
@@ -111,7 +114,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '-e', '--epochs',
-        default=100,
+        default=10,
         type=int,
         help='Training epochs count'
     )

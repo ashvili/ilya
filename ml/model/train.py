@@ -39,11 +39,11 @@ def train_epoch(model: nn.Module, data_loader, optimizer, loss_fn,
     data_loader.sampler.set_epoch(epoch)
     data_loader.sampler.rank = rank
 
-    for batch_idx, (data, target) in enumerate(data_loader):
+    for batch_idx, (data, target_idx) in enumerate(data_loader):
         optimizer.zero_grad()
 
         output = model(data.to('cpu'))
-        loss = loss_fn(output, target)
+        loss = loss_fn(output, target_idx.to('cpu'))
         loss.backward()
 
         optimizer.step()

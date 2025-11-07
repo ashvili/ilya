@@ -38,7 +38,7 @@ def predict_fn(model, data, idx, total_count, world_size=0, *args, **kwargs):
         pred = m(output)
         pred_idx = pred.max(1)[1]
 
-    _result = torch.hstack([data, pred_idx.unsqueeze(1), output])
+    _result = torch.hstack([data, pred_idx.unsqueeze(1), pred])
 
     if idx % math.floor(100) == 0:
         print(

@@ -21,30 +21,34 @@ def test_event(model, data_loader, loss_fn):
 
 
 def test_epoch(model, data_loader, loss_fn, *args, **kwargs):
-    meta = kwargs.get('meta', {'rank': 0, 'world_size': 1})
-    rank = meta.get('rank', 0)
-    world_size = meta.get('world_size', 0)
-
-    torch.set_num_threads(max(math.floor(os.cpu_count() / world_size), 1))
-
     model.eval()
-
-    data_loader.sampler.rank = rank
 
     test_loss = 0
     correct = 0
     count = 0
 
-    with torch.no_grad():
-        for data, target in data_loader:
-            output = model(data.to('cpu'))
-            test_loss += loss_fn(output, target).item()
-            pred = output.max(1)[1]
-            correct += pred.eq(target.max(1)[1]).sum().item()
-            count += len(data)
-            f1_micro = f1_score(target.max(1)[1], pred, average='micro')
-            f1_macro = f1_score(target.max(1)[1], pred, average='macro')
+    all_true = []
+    all_pred = []
 
-    avg_loss = test_loss / count
+    with torch.no_grad():
+        for data, target_idx in data_loader:
+            output = model(data.to('cpu'))
+            test_loss += loss_fn(output, target_idx.to('cpu')).item()
+            pred = output.argmax(dim=1)
+            correct += pred.eq(target_idx).sum().item()
+            count += len(data)
+            all_true.append(target_idx.cpu())
+            all_pred.append(pred.cpu())
+
+    if len(all_true) > 0:
+        y_true = torch.cat(all_true, dim=0)
+        y_pred = torch.cat(all_pred, dim=0)
+        f1_micro = f1_score(y_true.numpy(), y_pred.numpy(), average='micro')
+        f1_macro = f1_score(y_true.numpy(), y_pred.numpy(), average='macro')
+    else:
+        f1_micro = 0.0
+        f1_macro = 0.0
+
+    avg_loss = test_loss / max(count, 1)
 
     return avg_loss, correct, count, f1_micro, f1_macro

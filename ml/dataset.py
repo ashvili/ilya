@@ -84,10 +84,9 @@ class Lithology(Dataset):
         self.contents = {i: content for i, content in enumerate(index)}
         tfactorized = torch.tensor(factorized, dtype=torch.long)
 
-        # one-hot как было изначально (обучение поменяем позже, если нужно)
-        num_classes = int(tfactorized.max().item()) + 1 if tfactorized.numel() > 0 else 0
-        tensor = torch.zeros(tfactorized.size(0), num_classes).scatter_(1, tfactorized.unsqueeze(1), 1.0)
-        return tensor.type(torch.FloatTensor)
+                # возвращаем индексы классов (LongTensor)
+        self.class_count = len(self.contents)
+        return tfactorized
 
     def _prepare_tensors(self, df_raw: pd.DataFrame, classes: Optional[List[str]]):
         # Переименуем колонки в рабочие имена

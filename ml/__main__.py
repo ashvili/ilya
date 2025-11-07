@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 
 from ml.model import NeuralNetwork, train, predict
-from ml.utils import measure_elapsed_time
+from ml.utils import measure_elapsed_time, set_global_seed
 from ml.dataset import get_datasets
 
 
@@ -17,6 +17,7 @@ def main(datasets_filepath,
          nproc=1,
          log_interval=50,
          output_folder='./temp/'):
+    set_global_seed(42)
     print(f'{nproc=}')
 
     train_dataset, test_dataset = get_datasets(datasets_filepath)
@@ -71,9 +72,10 @@ def main(datasets_filepath,
 
     df = pd.DataFrame(result.numpy())
 
-    df.iloc[:, 3] = df.iloc[:, 3].astype(int).map(test_dataset.contents)
+    df.iloc[:, 3] = df.iloc[:, 3].astype(int).map(train_dataset.contents)
 
-    extra_columns = [f'prob_{i}' for i in range(len(df.columns[4:]))]
+    class_names = [train_dataset.contents[i] for i in range(len(train_dataset.contents))]
+    extra_columns = [f'prob_{name}' for name in class_names]
 
     df.columns = ['x', 'y', 'z', 'content_id', *extra_columns]
     df['_x'] = block_size
