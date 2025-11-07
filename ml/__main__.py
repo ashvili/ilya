@@ -8,6 +8,56 @@ from ml.model import NeuralNetwork, train, predict
 from ml.utils import measure_elapsed_time, set_global_seed
 from ml.dataset import get_datasets
 
+from dotenv import load_dotenv
+
+from .utils import set_global_seed
+
+
+    # ─────────────────────────────────────────────────────────────
+    # Диагностика разбиения и нормализации (очень полезно перед обучением)
+    # ─────────────────────────────────────────────────────────────
+    def _summarize_split(train_ds, test_ds):
+        # 1) Список скважин в train/test
+        import numpy as np
+        train_wells = list(pd.unique(pd.Series(train_ds.well_id)))
+        test_wells  = list(pd.unique(pd.Series(test_ds.well_id)))
+        train_wells_sorted = sorted(set(train_wells), key=lambda x: str(x))
+        test_wells_sorted  = sorted(set(test_wells),  key=lambda x: str(x))
+        union_wells = sorted(set(train_wells_sorted) | set(test_wells_sorted), key=lambda x: str(x))
+
+        print("\n[split] ─────────────────────────────────────")
+        print(f"[split] total wells: {len(union_wells)}")
+        print(f"[split] train wells (unique): {len(train_wells_sorted)}")
+        print(f"[split] test  wells (unique): {len(test_wells_sorted)}")
+        print(f"[split] train wells: {train_wells_sorted}")
+        print(f"[split] test  wells: {test_wells_sorted}")
+
+        # 2) Границы нормализации (MIN/MAX) — ОБЯЗАТЕЛЬНО из TRAIN
+        print("\n[norm] MIN/MAX (computed on TRAIN, applied to both):")
+        try:
+            borders = getattr(train_ds, "borders", None) or {}
+            for axis in ("X_x", "X_y", "X_z"):
+                b = borders.get(axis, {})
+                vmin = b.get("MIN", None)
+                vmax = b.get("MAX", None)
+                if vmin is None or vmax is None:
+                    print(f"[norm] {axis}: <no borders>")
+                else:
+                    # печатаем с 6 знаками — достаточно для контроля
+                    print(f"[norm] {axis}: min={float(vmin):.6f}, max={float(vmax):.6f}")
+        except Exception as e:
+            print(f"[norm] failed to print borders: {e}")
+
+        # 3) Список классов (порядок критичен — он задаёт индексацию)
+        print("\n[classes] mapping (idx → label) used for training/prediction:")
+        try:
+            contents = getattr(train_ds, "contents", None) or {}
+            class_names = [contents[i] for i in range(len(contents))]
+            print(f"[classes] count={len(class_names)}")
+            print(f"[classes] {class_names}")
+        except Exception as e:
+            print(f"[classes] failed to print class mapping: {e}")
+        print("────────────────────────────────────────────\n")
 
 @measure_elapsed_time
 def main(datasets_filepath,
@@ -17,10 +67,18 @@ def main(datasets_filepath,
          nproc=1,
          log_interval=50,
          output_folder='./temp/'):
+
+    # ─────────────────────────────────────────────────────────────
+    # ВАЖНО: фиксируем сиды ДО чтения данных и выбора holdout-скважин,
+    # чтобы сплиты/инициализации были воспроизводимыми.
+    # Если есть .env — подхватим переменные (HOLDOUT_WELLS_*).
+    # ─────────────────────────────────────────────────────────────
+    load_dotenv()              # загрузим .env из текущей директории
     set_global_seed(42)
     print(f'{nproc=}')
 
     train_dataset, test_dataset = get_datasets(datasets_filepath)
+    _summarize_split(train_dataset, test_dataset)
     model = NeuralNetwork(7).to('cpu')
 
     train(
