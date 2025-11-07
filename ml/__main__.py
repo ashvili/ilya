@@ -80,7 +80,7 @@ def main(datasets_filepath,
     # 1️⃣ — Ветка для кросс-валидации
     if args.cv == "k-1":
         df_folds, df_per_well = run_k_minus_1(
-            args.csv_path,
+            args.blocks_file_path,
             seed=42,
             epochs=args.epochs,
             batch_size=args.batch_size,
@@ -94,7 +94,7 @@ def main(datasets_filepath,
 
     if args.cv == "k-x":
         df_folds, df_per_well = run_k_minus_x(
-            args.csv_path,
+            args.blocks_file_path,
             x_count=args.fold_x,
             x_percent=args.fold_x_percent,
             repeats=args.cv_repeats,

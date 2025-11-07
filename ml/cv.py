@@ -10,11 +10,15 @@ import torch
 import pandas as pd
 
 from .dataset import get_datasets
-from .module import NeuralNetwork
-from .train import train
-from .test import test_epoch   # предполагается, что в test.py есть функция test_epoch(model, dataloader/device/...)
+from .model.module import NeuralNetwork
+from .model.train import train
+from .model.test import test_epoch   # предполагается, что в test.py есть функция test_epoch(model, dataloader/device/...)
 from .utils import set_global_seed
 from torch.utils.data import DataLoader
+import torch.nn as nn
+
+from tqdm.auto import tqdm
+_TQDM = tqdm
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -156,7 +160,14 @@ def _evaluate_on_test(model, test_dataset, device="cpu", batch_size=2048, num_wo
         pin_memory=torch.cuda.is_available(),
     )
     # ожидается, что test_epoch вернет: avg_loss, accuracy, f1_micro, f1_macro
-    avg_loss, correct, count, f1_micro, f1_macro = test_epoch(model, loader, device=device)
+    # передаем loss_fn явно (у нас таргеты — индексы классов)
+    loss_fn = nn.CrossEntropyLoss()
+    avg_loss, correct, count, f1_micro, f1_macro = test_epoch(
+        model,
+        loader,
+        device=device,
+        loss_fn=loss_fn,
+    )
     accuracy = float(correct / max(count, 1))
     return float(avg_loss), accuracy, float(f1_micro), float(f1_macro)
 
@@ -184,7 +195,11 @@ def run_k_minus_1(
     fold_rows = []
     per_well_rows = []
 
-    for w in uniq_wells:
+    fold_iter = uniq_wells
+    if _TQDM and os.getenv("DISABLE_TQDM","0") != "1":
+        fold_iter = _TQDM(uniq_wells, desc="[cv k-1] folds", leave=True)
+
+    for w in fold_iter:
         holdout_list = [w]
         # временно подставляем окружение для k–1/1
         with patched_env(HOLDOUT_WELLS_LIST=",".join(map(str, holdout_list))):
@@ -205,6 +220,8 @@ def run_k_minus_1(
 
         # глобальная оценка
         avg_loss, acc, f1_micro, f1_macro = _evaluate_on_test(model, test_ds, device=device)
+        if _TQDM and os.getenv("DISABLE_TQDM","0") != "1":
+            fold_iter.set_postfix(loss=float(avg_loss), acc=float(acc), f1=float(f1_macro))
 
         # per-well метрики (по каждой скважине в этом тесте)
         per_w = compute_per_well_metrics(model, test_ds, device=device)
@@ -265,7 +282,11 @@ def run_k_minus_x(
     fold_rows = []
     per_well_rows = []
 
-    for r in range(repeats):
+    rep_iter = range(repeats)
+    if _TQDM and os.getenv("DISABLE_TQDM","0") != "1":
+        rep_iter = _TQDM(range(repeats), desc="[cv k-x] repeats", leave=True)
+
+    for r in rep_iter:
         wells = uniq_wells[:]
         rng.shuffle(wells)
         holdout_list = wells[:x_count]
@@ -286,6 +307,8 @@ def run_k_minus_x(
         )
 
         avg_loss, acc, f1_micro, f1_macro = _evaluate_on_test(model, test_ds, device=device)
+        if _TQDM and os.getenv("DISABLE_TQDM","0") != "1":
+            rep_iter.set_postfix(loss=float(avg_loss), acc=float(acc), f1=float(f1_macro))        
         per_w = compute_per_well_metrics(model, test_ds, device=device)
 
         fold_rows.append({
