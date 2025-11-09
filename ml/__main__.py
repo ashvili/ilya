@@ -79,7 +79,10 @@ def main(datasets_filepath,
     train_dataset, test_dataset = get_datasets(datasets_filepath)
     _summarize_split(train_dataset, test_dataset)
     n_classes = len(train_dataset.contents)
-    model = NeuralNetwork(n_classes).to('cpu')
+    # Определяем устройство: из конфига ml.device или авто
+    dev_cfg = settings.get("ml.device")
+    device = dev_cfg if isinstance(dev_cfg, str) and dev_cfg in ("cuda", "cpu") else ("cuda" if torch.cuda.is_available() else "cpu")
+    model = NeuralNetwork(n_classes).to(device)
 
     train(
         model,
@@ -88,6 +91,7 @@ def main(datasets_filepath,
         batch_size=batch_size,
         learning_rate=lr,
         seed=settings.get("ml.holdout.seed", 42),
+        device=device,
     )
     print('train finished')
 
@@ -126,7 +130,7 @@ def main(datasets_filepath,
 
     # predict
     print('Prediction started')
-    result = predict(model, predict_data, nproc)
+    result = predict(model, predict_data, nproc, device=device, chunk_size=1024)
     print('Prediction finished')
 
     # denormalize

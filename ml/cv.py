@@ -72,6 +72,7 @@ def compute_per_well_metrics(
     """
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     model.eval()
+    model.to(device)
     # Сгруппируем индексы теста по well_id
     df_w = pd.DataFrame({"idx": range(len(test_dataset)), "well": test_dataset.well_id})
     groups = df_w.groupby("well", sort=False)["idx"].apply(list)
@@ -217,6 +218,7 @@ def run_k_minus_1(
             batch_size=batch_size,
             learning_rate=learning_rate,
             seed=seed,
+            device=device,
         )
 
         # Сохраняем веса модели для этого фолда, если указан путь
@@ -317,6 +319,7 @@ def run_k_minus_x(
             batch_size=batch_size,
             learning_rate=learning_rate,
             seed=seed + r,   # небольшое смещение, если хочешь разные сиды по повторам
+            device=device,
         )
 
         # Сохраняем веса модели для этого повтора, если указан путь

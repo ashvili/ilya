@@ -22,6 +22,7 @@ def train(
       - детерминированный DataLoader (generator с seed)
     """
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
     model.to(device)
 
     # фиксируем генератор для воспроизводимого shuffle

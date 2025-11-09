@@ -21,7 +21,9 @@ def test_event(model, data_loader, loss_fn):
 
 
 def test_epoch(model, data_loader, loss_fn, *args, **kwargs):
+    device = kwargs.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
     model.eval()
+    model.to(device)
 
     test_loss = 0
     correct = 0
@@ -32,13 +34,15 @@ def test_epoch(model, data_loader, loss_fn, *args, **kwargs):
 
     with torch.no_grad():
         for data, target_idx in data_loader:
-            output = model(data.to('cpu'))
-            test_loss += loss_fn(output, target_idx.to('cpu')).item()
+            data = data.to(device, non_blocking=True)
+            target_idx = target_idx.to(device, non_blocking=True)
+            output = model(data)
+            test_loss += loss_fn(output, target_idx).item()
             pred = output.argmax(dim=1)
             correct += pred.eq(target_idx).sum().item()
             count += len(data)
-            all_true.append(target_idx.cpu())
-            all_pred.append(pred.cpu())
+            all_true.append(target_idx.detach().cpu())
+            all_pred.append(pred.detach().cpu())
 
     if len(all_true) > 0:
         y_true = torch.cat(all_true, dim=0)

@@ -11,6 +11,7 @@
 	"fold_x": null,
 	"fold_x_percent": null,
 	"cv_repeats": 5,
+    "device_": "cuda",
 	"threads": {
 		"OMP_NUM_THREADS": "1",
 		"MKL_NUM_THREADS": "1",

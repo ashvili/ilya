@@ -3,7 +3,6 @@ import os
 
 import torch
 
-import multiprocessing
 from ml.processes import Event, CallEventParameters, prepare_subprocesses
 
 
@@ -24,23 +23,26 @@ def predict_event(model, data, idx, total_count):
 
 def predict_fn(model, data, idx, total_count, world_size=0, *args, **kwargs):
     meta = kwargs.get('meta', {'rank': 0, 'world_size': 1})
+    device = kwargs.get("device") or ("cuda" if torch.cuda.is_available() else "cpu")
 
     world_size = world_size or meta.get('world_size', 0)
 
     torch.set_num_threads(max(math.floor(os.cpu_count() / world_size), 1))
 
     model.eval()
+    model.to(device)
 
     m = torch.nn.Softmax(dim=1)
 
     with torch.no_grad():
-        output = model(data.to('cpu'))
+        data = data.to(device, non_blocking=True)
+        output = model(data)
         pred = m(output)
         pred_idx = pred.max(1)[1]
 
-    _result = torch.hstack([data, pred_idx.unsqueeze(1), pred])
+    _result = torch.hstack([data.detach().cpu(), pred_idx.unsqueeze(1).detach().cpu(), pred.detach().cpu()])
 
-    if idx % math.floor(100) == 0:
+    if max(1, total_count) and idx % max(1, math.floor(total_count / 10)) == 0:
         print(
             f'Prediction progress: {idx / total_count * 100}%'
         )
@@ -48,23 +50,18 @@ def predict_fn(model, data, idx, total_count, world_size=0, *args, **kwargs):
     return _result
 
 
-def predict(model, data: torch.Tensor, nproc=1):
-    import multiprocessing
-
-    splitted_data = data.tensor_split(math.ceil(len(data) / 1024))
-    total_count = len(splitted_data)
-
-    with multiprocessing.Pool(nproc) as p:
-        predicted = p.starmap(predict_fn, [
-            (model, splitted_datum, idx, total_count, nproc)
-            for idx, splitted_datum
-            in enumerate(splitted_data)
-        ])
-        p.close()
-        p.join()
-
+def predict(model, data: torch.Tensor, nproc=1, *, device: str | None = None, chunk_size: int = 1024):
+    """
+    Последовательный почанковый инференс с поддержкой GPU/CPU.
+    Избегаем multiprocessing, чтобы не копировать модель между процессами (особенно на CUDA).
+    """
+    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+    model.eval()
+    chunks = data.tensor_split(max(1, math.ceil(len(data) / max(1, chunk_size))))
+    total = len(chunks)
+    out = []
+    for i, ch in enumerate(chunks):
+        out.append(predict_fn(model, ch, i, total, device=device, world_size=nproc))
     print('predict ended')
-
-    tensor = torch.cat(predicted)
-
-    return tensor
+    return torch.cat(out)
