@@ -1,5 +1,4 @@
 import os
-import argparse
 
 import pandas as pd
 import torch
@@ -7,10 +6,7 @@ import torch
 from ml.model import NeuralNetwork, train, predict
 from ml.utils import measure_elapsed_time, set_global_seed
 from ml.dataset import get_datasets
-
-from dotenv import load_dotenv
-
-from .utils import set_global_seed
+from config import settings
 
 from .cv import run_k_minus_1, run_k_minus_x
 
@@ -72,42 +68,8 @@ def main(datasets_filepath,
     # ─────────────────────────────────────────────────────────────
     # ВАЖНО: фиксируем сиды ДО чтения данных и выбора holdout-скважин,
     # чтобы сплиты/инициализации были воспроизводимыми.
-    # Если есть .env — подхватим переменные (HOLDOUT_WELLS_*).
     # ─────────────────────────────────────────────────────────────
-    load_dotenv()              # загрузим .env из текущей директории
-    set_global_seed(42)
-
-    # 1️⃣ — Ветка для кросс-валидации
-    if args.cv == "k-1":
-        df_folds, df_per_well = run_k_minus_1(
-            args.blocks_file_path,
-            seed=42,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            learning_rate=args.learning_rate,
-            device=None,
-        )
-        df_folds.to_csv("cv_k-1_folds.csv", index=False)
-        df_per_well.to_csv("cv_k-1_per_well.csv", index=False)
-        print("Saved cv_k-1_folds.csv and cv_k-1_per_well.csv")
-        return  # ← выходим, чтобы не выполнять обычное обучение
-
-    if args.cv == "k-x":
-        df_folds, df_per_well = run_k_minus_x(
-            args.blocks_file_path,
-            x_count=args.fold_x,
-            x_percent=args.fold_x_percent,
-            repeats=args.cv_repeats,
-            seed=42,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            learning_rate=args.learning_rate,
-            device=None,
-        )
-        df_folds.to_csv("cv_k-x_folds.csv", index=False)
-        df_per_well.to_csv("cv_k-x_per_well.csv", index=False)
-        print("Saved cv_k-x_folds.csv and cv_k-x_per_well.csv")
-        return  # ← то же — завершаем
+    set_global_seed(settings.get("ml.holdout.seed", 42))
 
     # 2️⃣ — Обычный режим (без кросс-валидации)
 
@@ -190,81 +152,58 @@ def main(datasets_filepath,
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(
-        description='Train network and predict blocks',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        'blocks_file_path',
-        metavar='blocks-file-path',
-        type=str,
-        help='path to file with blocks',
-    )
-    parser.add_argument(
-        '--nproc',
-        default=os.cpu_count(),
-        type=int,
-        help='CPU count'
-    )
-    parser.add_argument(
-        '-e', '--epochs',
-        default=100,
-        type=int,
-        help='Training epochs count'
-    )
-    parser.add_argument(
-        '-bs', '--batch-size',
-        default=63,
-        type=int,
-        help='Batch size epochs count'
-    )
-    parser.add_argument(
-        '-lr', '--learning-rate',
-        default=1e-3,
-        type=float,
-        help='Learning rate'
-    )
-    parser.add_argument(
-        '-o', '--output-folder',
-        dest='output_folder',
-        default='./temp/',
-        type=str,
-        help='path to save output files',
-    )
+    ml_cfg = settings.section("ml")
 
-    parser.add_argument(
-        "--cv", choices=["none", "k-1", "k-x"], 
-        default="none"
-        )
-    parser.add_argument(
-        "--fold-x", 
-        type=int, 
-        default=None, 
-        help="x для k–x/x (количество скважин в тесте)"
-        )
-    parser.add_argument(
-        "--fold-x-percent", 
-        type=float, 
-        default=None, 
-        help="p%% для k–x/x (доля скважин)"
-        )
-    parser.add_argument(
-        "--cv-repeats", 
-        type=int, 
-        default=5
-        )
+    # Threads/env tuning from config
+    threads = ml_cfg.get("threads", {}) or {}
+    if isinstance(threads, dict):
+        for k, v in threads.items():
+            if v is None:
+                if k in os.environ:
+                    del os.environ[k]
+            else:
+                os.environ[str(k)] = str(v)
 
-    args = parser.parse_args()
+    cv_mode = str(ml_cfg.get("cv", "none"))
+    blocks_file_path = ml_cfg.get("blocks_file_path")
+    epochs = int(ml_cfg.get("epochs", 100))
+    batch_size = int(ml_cfg.get("batch_size", 63))
+    learning_rate = float(ml_cfg.get("learning_rate", 1e-3))
+    output_folder = ml_cfg.get("output_folder", "./temp/")
 
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
-
-    main(
-        args.blocks_file_path,
-        nproc=args.nproc,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        lr=args.learning_rate,
-        output_folder=args.output_folder,
-    )
+    if cv_mode == "k-1":
+        df_folds, df_per_well = run_k_minus_1(
+            blocks_file_path,
+            seed=settings.get("ml.holdout.seed", 42),
+            epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            device=None,
+        )
+        df_folds.to_csv("cv_k-1_folds.csv", index=False)
+        df_per_well.to_csv("cv_k-1_per_well.csv", index=False)
+        print("Saved cv_k-1_folds.csv and cv_k-1_per_well.csv")
+    elif cv_mode == "k-x":
+        df_folds, df_per_well = run_k_minus_x(
+            blocks_file_path,
+            x_count=ml_cfg.get("fold_x"),
+            x_percent=ml_cfg.get("fold_x_percent"),
+            repeats=int(ml_cfg.get("cv_repeats", 5)),
+            seed=settings.get("ml.holdout.seed", 42),
+            epochs=epochs,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            device=None,
+        )
+        df_folds.to_csv("cv_k-x_folds.csv", index=False)
+        df_per_well.to_csv("cv_k-x_per_well.csv", index=False)
+        print("Saved cv_k-x_folds.csv and cv_k-x_per_well.csv")
+    else:
+        main(
+            blocks_file_path,
+            nproc=int(ml_cfg.get("nproc", os.cpu_count() or 1)),
+            epochs=epochs,
+            batch_size=batch_size,
+            lr=learning_rate,
+            output_folder=output_folder,
+        )

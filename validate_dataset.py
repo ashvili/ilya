@@ -1,7 +1,8 @@
 from __future__ import annotations
-import argparse, json, sys
+import json, sys
 import pandas as pd
 import numpy as np
+from config import settings
 
 def fail(msg: str):
     print(f"ERROR: {msg}", file=sys.stderr)
@@ -64,8 +65,5 @@ def main(csv_path: str, schema_path: str):
     print("OK: dataset passed validation.")
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", required=True)
-    ap.add_argument("--schema", required=True)
-    args = ap.parse_args()
-    main(args.csv, args.schema)
+    cfg = settings.section("validate_dataset")
+    main(cfg.get("csv"), cfg.get("schema"))

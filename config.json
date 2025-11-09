@@ -1,0 +1,37 @@
+{
+	"ml": {
+	"blocks_file_path": "./temp/explored_blocks.csv",
+	"nproc": 4,
+	"epochs": 30,
+	"batch_size": 63,
+	"learning_rate": 0.001,
+	"output_folder": "./temp/",
+	"cv": "k-1",
+	"fold_x": null,
+	"fold_x_percent": null,
+	"cv_repeats": 5,
+	"threads": {
+		"OMP_NUM_THREADS": "1",
+		"MKL_NUM_THREADS": "1",
+		"OBJC_DISABLE_INITIALIZE_FORK_SAFETY": "YES"
+	},
+	"holdout": {
+		"wells_list": null,
+		"wells_count": null,
+		"wells_percent": null,
+		"seed": 42
+	}
+	},
+	"exploration": {
+	"input_file_path": "./БД1.XLSX",
+	"output_file_path": "./temp/explored_blocks.csv",
+	"block_size": 1,
+	"advanced": false
+	},
+	"validate_dataset": {
+	"csv": "./data/blocks.csv",
+	"schema": "./schema.json"
+	}
+}
+
+

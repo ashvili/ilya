@@ -1,10 +1,10 @@
-import argparse
 import os
 
 import pandas as pd
 import numpy as np
 
 from exploration.site import Site, Well, WellSegment
+from config import settings
 
 
 def main(voxel_size: int, inputfile_path: str, outputfile_path: str, advanced: bool = False):
@@ -75,34 +75,11 @@ def main(voxel_size: int, inputfile_path: str, outputfile_path: str, advanced: b
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Explore blocks')
-    parser.add_argument(
-        '-i', '--input_file_path',
-        metavar='input-file-path',
-        type=str,
-        help='path to input file',
-    )
-    parser.add_argument(
-        '-o', '--output-file-path',
-        dest='output_file_path',
-        default='./temp/explored_blocks.csv',
-        type=str,
-        help='path to output file',
-    )
-    parser.add_argument(
-        '-bs', '--block-size',
-        default=1,
-        type=int,
-        help='block size (integer)'
-    )
-    parser.add_argument(
-        '--advanced',
-        action='store_true',
-        default=False,
-        help='use advanced processing mode with normalization and additional features (default: simple mode)'
-    )
+    cfg = settings.section("exploration")
+    input_path = cfg.get("input_file_path")
+    output_path = cfg.get("output_file_path", "./temp/explored_blocks.csv")
+    voxel_size = int(cfg.get("block_size", 1))
+    advanced = bool(cfg.get("advanced", False))
 
-    args = parser.parse_args()
-
-    main(args.block_size, args.input_file_path, args.output_file_path, args.advanced)
-    print(f'Done, saved to {os.path.abspath(args.output_file_path)}')
+    main(voxel_size, input_path, output_path, advanced)
+    print(f'Done, saved to {os.path.abspath(output_path)}')

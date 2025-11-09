@@ -6,6 +6,7 @@ from typing import Optional, Set, Dict, List
 import pandas as pd
 import torch
 from torch.utils.data.dataset import Dataset
+from config import settings
 
 
 class Lithology(Dataset):
@@ -137,6 +138,11 @@ def _choose_holdout_wells(df: pd.DataFrame, *, wells_col: str = 'well_id') -> Op
       - HOLDOUT_WELLS_COUNT: "1", "5", ...
       - HOLDOUT_WELLS_PERCENT: "5", "10", ... (0..100)
       - HOLDOUT_SEED: "42" (по умолчанию 42)
+    Также поддерживается конфигурационный файл (config.json), секция ml.holdout:
+      - wells_list
+      - wells_count
+      - wells_percent
+      - seed
     Приоритет: LIST > COUNT > PERCENT. Если ничего не задано — ~20% скважин в тест.
     """
     uniq = list(pd.unique(df[wells_col]))
@@ -144,27 +150,36 @@ def _choose_holdout_wells(df: pd.DataFrame, *, wells_col: str = 'well_id') -> Op
     if k == 0:
         return None
 
-    env_list = os.getenv('HOLDOUT_WELLS_LIST')
-    if env_list:
-        cand = [w.strip() for w in env_list.split(',') if w.strip()]
-        return set(cand)
+    # If not provided via env — check config
+    cfg_holdout = settings.get("ml.holdout", {}) or {}
+    cfg_list = cfg_holdout.get("wells_list")
+    if cfg_list:
+        if isinstance(cfg_list, str):
+            cand = [w.strip() for w in cfg_list.split(',') if w.strip()]
+        else:
+            try:
+                cand = [str(w).strip() for w in list(cfg_list)]
+            except Exception:
+                cand = []
+        if cand:
+            return set(cand)
 
-    seed = int(os.getenv('HOLDOUT_SEED', '42'))
+    seed = cfg_holdout.get("seed", 42)
     rng = random.Random(seed)
     rng.shuffle(uniq)
 
-    env_count = os.getenv('HOLDOUT_WELLS_COUNT')
-    if env_count:
+    cfg_count = cfg_holdout.get("wells_count")
+    if cfg_count is not None:
         try:
-            cnt = max(1, min(k - 1, int(env_count)))
+            cnt = max(1, min(k - 1, int(cfg_count)))
         except Exception:
             cnt = 1
         return set(uniq[:cnt])
 
-    env_pct = os.getenv('HOLDOUT_WELLS_PERCENT')
-    if env_pct:
+    cfg_pct = cfg_holdout.get("wells_percent")
+    if cfg_pct is not None:
         try:
-            p = float(env_pct)
+            p = float(cfg_pct)
         except Exception:
             p = 20.0
         p = max(0.0, min(100.0, p))
