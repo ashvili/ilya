@@ -78,21 +78,28 @@ def main(datasets_filepath,
 
     train_dataset, test_dataset = get_datasets(datasets_filepath)
     _summarize_split(train_dataset, test_dataset)
-    model = NeuralNetwork(7).to('cpu')
+    n_classes = len(train_dataset.contents)
+    model = NeuralNetwork(n_classes).to('cpu')
 
     train(
-        model=model,
-        train_dataset=train_dataset,
+        model,
+        train_dataset,
         epochs=epochs,
         batch_size=batch_size,
-        optimizer_kwargs={
-            'lr': lr,
-        },
-        nproc=nproc,
-        log_interval=log_interval,
-        output_folder=output_folder,
+        learning_rate=lr,
+        seed=settings.get("ml.holdout.seed", 42),
     )
     print('train finished')
+
+    # Save trained weights if configured
+    model_output_path = settings.get("ml.model_output_path")
+    if model_output_path:
+        try:
+            os.makedirs(os.path.dirname(model_output_path) or ".", exist_ok=True)
+        except Exception:
+            pass
+        torch.save(model.state_dict(), model_output_path)
+        print(f"Saved model weights to {os.path.abspath(model_output_path)}")
 
     x_min, x_max = train_dataset.borders['X_x']['MIN'], train_dataset.borders['X_x']['MAX']
     y_min, y_max = train_dataset.borders['X_y']['MIN'], train_dataset.borders['X_y']['MAX']

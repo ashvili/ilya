@@ -6,6 +6,7 @@
 	"batch_size": 63,
 	"learning_rate": 0.001,
 	"output_folder": "./temp/",
+ 	"model_output_path": "./temp/model.pt",
 	"cv": "k-1",
 	"fold_x": null,
 	"fold_x_percent": null,

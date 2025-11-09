@@ -16,6 +16,7 @@ from .model.test import test_epoch   # предполагается, что в t
 from .utils import set_global_seed
 from torch.utils.data import DataLoader
 import torch.nn as nn
+from config import settings
 
 from tqdm.auto import tqdm
 _TQDM = tqdm
@@ -218,6 +219,18 @@ def run_k_minus_1(
             seed=seed,
         )
 
+        # Сохраняем веса модели для этого фолда, если указан путь
+        model_output_path = settings.get("ml.model_output_path")
+        if model_output_path:
+            root, ext = os.path.splitext(model_output_path)
+            ext = ext or ".pt"
+            save_path = f"{root}_fold_{w}{ext}"
+            try:
+                os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+            except Exception:
+                pass
+            torch.save(model.state_dict(), save_path)
+
         # глобальная оценка
         avg_loss, acc, f1_micro, f1_macro = _evaluate_on_test(model, test_ds, device=device)
         if _TQDM and os.getenv("DISABLE_TQDM","0") != "1":
@@ -305,6 +318,18 @@ def run_k_minus_x(
             learning_rate=learning_rate,
             seed=seed + r,   # небольшое смещение, если хочешь разные сиды по повторам
         )
+
+        # Сохраняем веса модели для этого повтора, если указан путь
+        model_output_path = settings.get("ml.model_output_path")
+        if model_output_path:
+            root, ext = os.path.splitext(model_output_path)
+            ext = ext or ".pt"
+            save_path = f"{root}_rep_{r}{ext}"
+            try:
+                os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+            except Exception:
+                pass
+            torch.save(model.state_dict(), save_path)
 
         avg_loss, acc, f1_micro, f1_macro = _evaluate_on_test(model, test_ds, device=device)
         if _TQDM and os.getenv("DISABLE_TQDM","0") != "1":
