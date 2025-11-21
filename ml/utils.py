@@ -31,7 +31,7 @@ def set_global_seed(seed: int = 42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
     try:
-        torch.use_deterministic_algorithms(True)
+        torch.use_deterministic_algorithms(True, warn_only=True)
     except Exception:
         pass
     torch.backends.cudnn.deterministic = True
