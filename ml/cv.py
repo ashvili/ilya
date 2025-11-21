@@ -199,7 +199,7 @@ def run_k_minus_1(
 
     fold_iter = uniq_wells
     if _TQDM and os.getenv("DISABLE_TQDM","0") != "1":
-        fold_iter = _TQDM(uniq_wells, desc="[cv k-1] folds", leave=True)
+        fold_iter = _TQDM(uniq_wells, desc="[cv k-1] folds", leave=True, ncols=100, mininterval=0.1)
 
     for w in fold_iter:
         holdout_list = [w]
@@ -299,7 +299,7 @@ def run_k_minus_x(
 
     rep_iter = range(repeats)
     if _TQDM and os.getenv("DISABLE_TQDM","0") != "1":
-        rep_iter = _TQDM(range(repeats), desc="[cv k-x] repeats", leave=True)
+        rep_iter = _TQDM(range(repeats), desc="[cv k-x] repeats", leave=True, ncols=100, mininterval=0.1)
 
     for r in rep_iter:
         wells = uniq_wells[:]
